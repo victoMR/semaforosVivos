@@ -68,6 +68,9 @@ python simulador_semaforos.py
 
 ## Controles de Simulación
 
+![image](https://github.com/user-attachments/assets/25a63eed-81fd-45a7-aefb-ceeda7e1c8b1)
+
+
 ### Botones de Control
 - **Iniciar**: Comienza la simulación
 - **Pausar**: Detiene la simulación
