@@ -1,0 +1,6 @@
+.ropeproject
+/build
+/venv
+/web
+appimagetool-x86_64.AppImage
+SimuladorSemaforos.spec
