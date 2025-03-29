@@ -51,8 +51,8 @@ Este proyecto es un simulador de semáforos interactivo y detallado desarrollado
 
 1. Clonar el repositorio
 ```bash
-git clone https://github.com/tu-usuario/simulador-semaforos.git
-cd simulador-semaforos
+git clone https://github.com/victoMR/semaforosVivos
+cd semaforosVivo
 ```
 
 2. Instalar dependencias
