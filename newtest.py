@@ -12,7 +12,7 @@ class Vehicle:
     def __init__(self, lane, position, destination=None):
         self.lane = lane  # "Norte", "Sur", "Este", "Oeste"
         self.position = position  # Position on the lane (0-100)
-        self.speed = 2  # Default speed
+        self.speed = 3  # Default speed
         self.stopped = False
         self.in_intersection = False
         self.committed_to_crossing = False  # Punto de no retorno, ya decidió cruzar
@@ -142,9 +142,9 @@ def update_vehicles(self):
             if abs(vehicle.position - old_position) < 0.1:  # Si apenas se movió
                 # Forzar movimiento
                 if vehicle.lane in ["Norte", "Este"]:
-                    vehicle.position += 0.5  # Mover un poco hacia adelante
+                    vehicle.position += 1  # Mover un poco hacia adelante
                 else:  # Sur, Oeste
-                    vehicle.position -= 0.5
+                    vehicle.position -= 1
 
         # Verificar si el vehículo salió de la pantalla
         if (vehicle.lane in ["Norte", "Este"] and vehicle.position > 100) or \
@@ -531,15 +531,55 @@ class SimuladorSemaforos(QMainWindow):
         self.traffic_timer.timeout.connect(self.generate_traffic)
 
     def add_vehicle(self, lane, destination=None):
-        # Añadir vehículo con un destino específico (o el predeterminado)
+        """
+        Añadir vehículo con un destino específico (o el predeterminado)
+        Posición inicial correcta según su carril de origen
+        """
+        import random
+
+        # Posibles destinos para cada carril de origen
+        possible_destinations = {
+            "Norte": ["Sur", "Este", "Oeste"],  # Norte puede ir a Sur, Este u Oeste
+            "Sur": ["Norte", "Este", "Oeste"],  # Sur puede ir a Norte, Este u Oeste
+            "Este": ["Oeste", "Norte", "Sur"],  # Este puede ir a Oeste, Norte o Sur
+            "Oeste": ["Este", "Norte", "Sur"]   # Oeste puede ir a Este, Norte o Sur
+        }
+
+        # Si no se especifica destino, elegir uno aleatorio válido
+        if destination is None:
+            destination = random.choice(possible_destinations[lane])
+        elif destination not in possible_destinations[lane]:
+            destination = random.choice(possible_destinations[lane])  # Corregir destino inválido
+
+        # Crear vehículo con posición inicial correcta según su carril
         if lane == "Norte":
-            self.vehicles.append(Vehicle("Norte", 0, destination))
+            # Norte: posición inicial en la parte superior (y=0), se mueve hacia abajo (aumenta y)
+            self.vehicles.append(Vehicle(
+                lane="Norte",
+                position=0,  # Empieza en la parte superior
+                destination=destination
+            ))
         elif lane == "Sur":
-            self.vehicles.append(Vehicle("Sur", 100, destination))
+            # Sur: posición inicial en la parte inferior (y=100), se mueve hacia arriba (disminuye y)
+            self.vehicles.append(Vehicle(
+                lane="Sur",
+                position=100,  # Empieza en la parte inferior
+                destination=destination
+            ))
         elif lane == "Este":
-            self.vehicles.append(Vehicle("Este", 0, destination))
+            # Este: posición inicial en la izquierda (x=0), se mueve hacia la derecha (aumenta x)
+            self.vehicles.append(Vehicle(
+                lane="Este",
+                position=0,  # Empieza en la izquierda
+                destination=destination
+            ))
         elif lane == "Oeste":
-            self.vehicles.append(Vehicle("Oeste", 100, destination))
+            # Oeste: posición inicial en la derecha (x=100), se mueve hacia la izquierda (disminuye x)
+            self.vehicles.append(Vehicle(
+                lane="Oeste",
+                position=100,  # Empieza en la derecha
+                destination=destination
+            ))
 
         # Actualizar contadores de tráfico
         self.traffic_counts[lane] += 1
@@ -547,30 +587,241 @@ class SimuladorSemaforos(QMainWindow):
         # Actualizar visualización
         self.dibujar_cruce()
 
+    def dibujar_vehiculos(self):
+        """
+        Versión corregida para visualizar vehículos con las direcciones correctas
+        """
+        # Dibujar todos los vehículos en la escena con colores según su destino
+        for vehicle in self.vehicles:
+            # Obtener posición según carril y posición relativa
+            if vehicle.lane == "Norte":
+                # Norte: desde arriba (0) hacia abajo (100)
+                x = 430
+                y = vehicle.position / 100 * 700
+                rotation = 270  # Hacia abajo
+            elif vehicle.lane == "Sur":
+                # Sur: desde abajo (100) hacia arriba (0)
+                x = 450
+                y = 700 - (vehicle.position / 100 * 700)
+                rotation = 90  # Hacia arriba
+            elif vehicle.lane == "Este":
+                # Este: desde izquierda (0) hacia derecha (100)
+                x = vehicle.position / 100 * 900
+                y = 330
+                rotation = 0  # Hacia la derecha
+            elif vehicle.lane == "Oeste":
+                # Oeste: desde derecha (100) hacia izquierda (0)
+                x = 900 - (vehicle.position / 100 * 900)
+                y = 350
+                rotation = 180  # Hacia la izquierda
+
+            # Obtener color según destino
+            vehicle_color = vehicle.get_color_based_on_destination()
+
+            # Dibujar vehículo con forma más clara (triángulo más visible)
+            polygon = QPolygonF([
+                QPointF(0, -10),  # Punta frontal del vehículo
+                QPointF(20, 0),   # Esquina trasera derecha
+                QPointF(0, 10)    # Esquina trasera izquierda
+            ])
+
+            vehicle_item = self.scene.addPolygon(polygon, QPen(Qt.GlobalColor.black), QBrush(vehicle_color))
+            vehicle_item.setPos(x, y)
+            vehicle_item.setRotation(rotation)
+
+            # Añadir indicador de origen-destino más claro
+            # Crear un rectángulo con formato "Origen→Destino"
+            origin_dest_text = f"{vehicle.lane[0]}→{vehicle.destination[0]}"
+            text_bg = self.scene.addRect(
+                x - 10, y - 20, 40, 20,
+                QPen(Qt.GlobalColor.black),
+                QBrush(QColor(0, 0, 0, 180))  # Fondo negro semi-transparente
+            )
+
+            # Texto en blanco para mejor contraste
+            text_item = self.scene.addText(origin_dest_text)
+            text_item.setDefaultTextColor(QColor(255, 255, 255))  # Blanco
+            text_item.setPos(x - 5, y - 20)
+
+            # Asegurar que el texto esté encima del fondo
+            text_item.setZValue(text_bg.zValue() + 1)
+
     def update_vehicles(self):
-        # Mover vehículos según su velocidad, estado de los semáforos y posición en la intersección
+        """
+        Actualiza la posición de todos los vehículos y maneja la eliminación de los
+        que salen de la pantalla. Versión corregida para movimiento correcto según el carril.
+        """
+        vehicles_to_remove = []
+
+        # Variable para rastrear si hay vehículos en la intersección
+        vehicles_in_intersection = {}
+
+        for vehicle in self.vehicles:
+            # Obtener el semáforo correspondiente al carril del vehículo
+            semaforo = self.semaforos_vehiculares.get(vehicle.lane)
+
+            # Determinar si el vehículo debe detenerse
+            stop_at_light = False
+
+            # Solo verificar semáforo si está cerca de la intersección
+            if vehicle.is_approaching_intersection() and not vehicle.in_intersection:
+                if semaforo and semaforo.estado != "verde":
+                    stop_at_light = True
+                elif vehicle.is_about_to_enter_intersection():
+                    vehicle.committed_to_crossing = True
+
+            # Si está en la intersección o comprometido a cruzar, continuar
+            if vehicle.in_intersection or vehicle.committed_to_crossing:
+                stop_at_light = False
+
+            # Actualizar estado de intersección
+            if vehicle.is_in_intersection():
+                vehicle.in_intersection = True
+                vehicle.committed_to_crossing = True
+                # Registrar vehículos en la intersección para estadísticas
+                vehicles_in_intersection[vehicle.lane] = vehicles_in_intersection.get(vehicle.lane, 0) + 1
+
+            if vehicle.has_cleared_intersection():
+                vehicle.in_intersection = False
+                vehicle.committed_to_crossing = False
+
+            # Mover vehículo si no está detenido, según su dirección correcta
+            if not stop_at_light and not vehicle.stopped:
+                speed_factor = self.simulation_speed / 5
+
+                if vehicle.lane == "Norte":
+                    # Norte -> Sur: aumentar posición (moverse hacia abajo)
+                    vehicle.position += vehicle.speed * speed_factor
+                    if vehicle.position > 100:
+                        vehicles_to_remove.append(vehicle)
+
+                elif vehicle.lane == "Sur":
+                    # Sur -> Norte: disminuir posición (moverse hacia arriba)
+                    vehicle.position -= vehicle.speed * speed_factor
+                    if vehicle.position < 0:
+                        vehicles_to_remove.append(vehicle)
+
+                elif vehicle.lane == "Este":
+                    # Este -> Oeste: aumentar posición (moverse hacia la derecha)
+                    vehicle.position += vehicle.speed * speed_factor
+                    if vehicle.position > 100:
+                        vehicles_to_remove.append(vehicle)
+
+                elif vehicle.lane == "Oeste":
+                    # Oeste -> Este: disminuir posición (moverse hacia la izquierda)
+                    vehicle.position -= vehicle.speed * speed_factor
+                    if vehicle.position < 0:
+                        vehicles_to_remove.append(vehicle)
+
+        # Eliminar vehículos que han salido de la pantalla
+        for vehicle in vehicles_to_remove:
+            if vehicle in self.vehicles:
+                self.vehicles.remove(vehicle)
+                if vehicle.lane in self.traffic_counts:
+                    self.traffic_counts[vehicle.lane] = max(0, self.traffic_counts[vehicle.lane] - 1)
+
+        # Actualizar visualización si hay cambios
+        if vehicles_to_remove or self.vehicles:
+            self.dibujar_cruce()
+
+        # Almacenar estadísticas de intersección
+        self.intersection_stats = vehicles_in_intersection
+
+    def generate_traffic(self):
+        """
+        Generación automática de tráfico con direcciones correctas
+        """
+        import random
+
+        # Posibles combinaciones origen-destino incluyendo giros
+        traffic_patterns = {
+            "Norte": ["Sur", "Este", "Oeste"],  # Norte puede ir hacia Sur, Este u Oeste
+            "Sur": ["Norte", "Este", "Oeste"],  # Sur puede ir hacia Norte, Este u Oeste
+            "Este": ["Oeste", "Norte", "Sur"],  # Este puede ir hacia Oeste, Norte o Sur
+            "Oeste": ["Este", "Norte", "Sur"]   # Oeste puede ir hacia Este o Sur
+        }
+
+        # Seleccionar un origen aleatorio
+        origin = random.choice(list(traffic_patterns.keys()))
+
+        # Seleccionar un destino aleatorio para ese origen
+        destination = random.choice(traffic_patterns[origin])
+
+        # Crear vehículo con la posición inicial correcta según el origen
+        if origin == "Norte":
+            self.vehicles.append(Vehicle(
+                lane="Norte",
+                position=0,  # Arriba
+                destination=destination
+            ))
+        elif origin == "Sur":
+            self.vehicles.append(Vehicle(
+                lane="Sur",
+                position=100,  # Abajo
+                destination=destination
+            ))
+        elif origin == "Este":
+            self.vehicles.append(Vehicle(
+                lane="Este",
+                position=0,  # Izquierda
+                destination=destination
+            ))
+        elif origin == "Oeste":
+            self.vehicles.append(Vehicle(
+                lane="Oeste",
+                position=100,  # Derecha
+                destination=destination
+            ))
+
+        # Actualizar contadores de tráfico
+        self.traffic_counts[origin] += 1
+
+        # Mostrar mensaje temporal en la esquina
+        patron_msg = self.scene.addText(f"Nuevo vehículo: {origin} → {destination}")
+        patron_msg.setDefaultTextColor(QColor(0, 0, 128))
+        patron_msg.setPos(20, 20)
+
+        # Crear un temporizador para eliminar el mensaje después de 2 segundos
+        msg_timer = QTimer(self)
+        msg_timer.timeout.connect(lambda: patron_msg.setPlainText(""))
+        msg_timer.setSingleShot(True)
+        msg_timer.start(2000)
+
+        # Actualizar visualización
+        self.dibujar_cruce()
+        """
+        Actualiza la posición de todos los vehículos considerando solo su propio semáforo
+        """
         vehicles_to_remove = []
 
         for vehicle in self.vehicles:
-            # Determine if the vehicle should stop at a red light
+            # Obtener el semáforo correspondiente al carril del vehículo
+            semaforo = self.semaforos_vehiculares.get(vehicle.lane)
+
+            # Determinar si el vehículo debe detenerse
             stop_at_light = False
 
-            # Only stop for red lights if approaching intersection and not already in it
+            # Solo verificar semáforo si está cerca de la intersección
             if vehicle.is_approaching_intersection() and not vehicle.in_intersection:
-                semaforo = self.semaforos_vehiculares.get(vehicle.lane)
                 if semaforo and semaforo.estado != "verde":
                     stop_at_light = True
+                elif vehicle.is_about_to_enter_intersection():
+                    vehicle.committed_to_crossing = True
 
-            # If in the intersection, continue regardless of light color
-            if vehicle.is_in_intersection():
-                vehicle.in_intersection = True
+            # Si está en la intersección o comprometido a cruzar, continuar
+            if vehicle.in_intersection or vehicle.committed_to_crossing:
                 stop_at_light = False
 
-            # Mark as cleared once past the intersection
+            # Actualizar estado de intersección
+            if vehicle.is_in_intersection():
+                vehicle.in_intersection = True
+                vehicle.committed_to_crossing = True
+
             if vehicle.has_cleared_intersection():
                 vehicle.in_intersection = False
+                vehicle.committed_to_crossing = False
 
-            # Update position if not stopped
+            # Mover vehículo si no está detenido
             if not stop_at_light and not vehicle.stopped:
                 if vehicle.lane in ["Norte", "Este"]:
                     vehicle.position += vehicle.speed * (self.simulation_speed / 5)
@@ -585,11 +836,10 @@ class SimuladorSemaforos(QMainWindow):
         for vehicle in vehicles_to_remove:
             if vehicle in self.vehicles:
                 self.vehicles.remove(vehicle)
-                # Reducir el contador de tráfico para ese carril
                 if vehicle.lane in self.traffic_counts:
                     self.traffic_counts[vehicle.lane] = max(0, self.traffic_counts[vehicle.lane] - 1)
 
-        # Actualizar visualización solo si hay cambios
+        # Actualizar visualización si hay cambios
         if vehicles_to_remove or self.vehicles:
             self.dibujar_cruce()
 
@@ -603,33 +853,67 @@ class SimuladorSemaforos(QMainWindow):
             self.traffic_timer.stop()
 
     def generate_traffic(self):
-        # Generar tráfico con patrones origen-destino realistas
+        """
+        Versión mejorada que visualiza mejor el patrón origen-destino
+        """
         import random
 
         # Posibles combinaciones origen-destino incluyendo giros
-        traffic_patterns = [
-            # Recto
-            ("Norte", "Sur"),
-            ("Sur", "Norte"),
-            ("Este", "Oeste"),
-            ("Oeste", "Este"),
-            # Giro a la izquierda
-            ("Norte", "Este"),
-            ("Sur", "Oeste"),
-            ("Este", "Norte"),
-            ("Oeste", "Sur"),
-            # Giro a la derecha
-            ("Norte", "Oeste"),
-            ("Sur", "Este"),
-            ("Este", "Sur"),
-            ("Oeste", "Norte")
-        ]
+        # Organizadas como un diccionario para mejor comprensión
+        traffic_patterns = {
+            "Norte": ["Sur", "Este"],       # Norte puede ir hacia Sur o Este
+            "Sur": ["Norte", "Oeste"],      # Sur puede ir hacia Norte u Oeste
+            "Este": ["Oeste", "Norte"],     # Este puede ir hacia Oeste o Norte
+            "Oeste": ["Este", "Sur"]        # Oeste puede ir hacia Este o Sur
+        }
 
-        # Seleccionar un patrón aleatorio
-        origin, destination = random.choice(traffic_patterns)
+        # Seleccionar un origen aleatorio
+        origin = random.choice(list(traffic_patterns.keys()))
 
-        # Crear vehículo con posición y destino adecuados
-        self.add_vehicle(origin, destination)
+        # Seleccionar un destino aleatorio para ese origen
+        destination = random.choice(traffic_patterns[origin])
+
+        # Crear vehículo con origen y destino elegidos
+        if origin == "Norte":
+            self.vehicles.append(Vehicle(
+                lane="Norte",
+                position=0,
+                destination=destination
+            ))
+        elif origin == "Sur":
+            self.vehicles.append(Vehicle(
+                lane="Sur",
+                position=100,
+                destination=destination
+            ))
+        elif origin == "Este":
+            self.vehicles.append(Vehicle(
+                lane="Este",
+                position=0,
+                destination=destination
+            ))
+        elif origin == "Oeste":
+            self.vehicles.append(Vehicle(
+                lane="Oeste",
+                position=100,
+                destination=destination
+            ))
+
+        # Actualizar contadores de tráfico
+        self.traffic_counts[origin] += 1
+
+        # Mostrar mensaje temporal en la esquina
+        patron_msg = self.scene.addText(f"Nuevo vehículo: {origin} → {destination}")
+        patron_msg.setDefaultTextColor(QColor(0, 0, 128))
+        patron_msg.setPos(20, 20)
+
+        # Crear un temporizador para eliminar el mensaje después de 2 segundos
+        self.timer = QTimer()
+        self.timer.timeout.connect(lambda: patron_msg.setPlainText(""))
+        self.timer.start(2000)
+
+        # Actualizar visualización
+        self.dibujar_cruce()
 
     def change_speed(self, value):
         self.simulation_speed = value / 5.0
@@ -728,20 +1012,37 @@ class SimuladorSemaforos(QMainWindow):
         # Actualizar contadores de tráfico
         self.contar_vehiculos_cercanos()
 
-        # Dibujar calles más anchas
+        # Dibujar calles más anchas con mejor visualización
         # Horizontal
         self.scene.addRect(0, 315, 900, 70, QPen(Qt.GlobalColor.black), QBrush(Qt.GlobalColor.gray))
         # Vertical
         self.scene.addRect(415, 0, 70, 700, QPen(Qt.GlobalColor.black), QBrush(Qt.GlobalColor.gray))
 
-        # Líneas divisorias
+        # Líneas divisorias más visibles
         pen = QPen(Qt.GlobalColor.white, 3, Qt.PenStyle.DashLine)
         self.scene.addLine(0, 350, 900, 350, pen)  # Horizontal
         self.scene.addLine(450, 0, 450, 700, pen)  # Vertical
 
-        # Dibujar caja de intersección que no debe bloquearse
+        # Dibujar caja de intersección que no debe bloquearse - más visible
         intersection_pen = QPen(QColor(255, 0, 0), 2, Qt.PenStyle.DashLine)
-        self.scene.addRect(415, 315, 70, 70, intersection_pen)
+        intersection_box = self.scene.addRect(415, 315, 70, 70, intersection_pen)
+
+        # Añadir indicación "INTERSECCIÓN" dentro de la caja
+        intersection_text = self.scene.addText("CRUCE")
+        intersection_text.setDefaultTextColor(QColor(255, 0, 0))
+        intersection_text.setPos(420, 335)
+
+        # Añadir etiqueta de advertencia si hay vehículos en la intersección
+        if hasattr(self, 'intersection_stats') and self.intersection_stats:
+            total_in_intersection = sum(self.intersection_stats.values())
+            if total_in_intersection > 0:
+                warning_text = self.scene.addText(f"¡{total_in_intersection} vehículo(s) en intersección!")
+                warning_text.setDefaultTextColor(QColor(255, 0, 0))
+                warning_text.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+                warning_text.setPos(415, 285)
+
+        # Dibujar carriles con flechas de dirección
+        self.dibujar_carriles_con_flechas()
 
         # Semáforos vehiculares
         self.dibujar_semaforo_vehicular("Norte", 450, 205, 90)  # Norte
@@ -766,26 +1067,30 @@ class SimuladorSemaforos(QMainWindow):
         # Dibujar vehículos
         self.dibujar_vehiculos()
 
-        # Agregar etiquetas de direcciones
+        # Agregar etiquetas de direcciones más grandes y claras
         font = QFont("Arial", 16, QFont.Weight.Bold)
 
-        text_norte = self.scene.addText("Norte", font)
-        text_norte.setPos(430, 30)
+        text_norte = self.scene.addText("NORTE", font)
+        text_norte.setPos(420, 30)
+        text_norte.setDefaultTextColor(QColor(0, 0, 200))
 
-        text_sur = self.scene.addText("Sur", font)
+        text_sur = self.scene.addText("SUR", font)
         text_sur.setPos(435, 630)
+        text_sur.setDefaultTextColor(QColor(0, 0, 200))
 
-        text_este = self.scene.addText("Este", font)
+        text_este = self.scene.addText("ESTE", font)
         text_este.setPos(700, 330)
+        text_este.setDefaultTextColor(QColor(0, 0, 200))
 
-        text_oeste = self.scene.addText("Oeste", font)
+        text_oeste = self.scene.addText("OESTE", font)
         text_oeste.setPos(200, 330)
+        text_oeste.setDefaultTextColor(QColor(0, 0, 200))
 
         # Dibujar "cámaras" y contadores de tráfico
         self.dibujar_contadores_trafico()
 
-        # Dibujar leyenda de colores de vehículos
-        self.dibujar_leyenda_vehiculos()
+        # Dibujar leyenda mejorada para mejor comprensión
+        self.dibujar_leyenda_mejorada()
 
     def dibujar_leyenda_vehiculos(self):
         # Añadir leyenda para explicar colores de vehículos
@@ -857,7 +1162,117 @@ class SimuladorSemaforos(QMainWindow):
         text_oeste.setPos(250, 340)
         text_oeste.setDefaultTextColor(QColor(255, 255, 255))
 
+    def mostrar_panel_estadisticas(self):
+        """
+        Muestra un panel con estadísticas del tráfico
+        """
+        # Crear fondo para el panel
+        stats_bg = self.scene.addRect(
+            20, 60, 200, 200,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(220, 220, 255, 200))  # Azul muy claro semi-transparente
+        )
+
+        # Título del panel
+        title = self.scene.addText("ESTADÍSTICAS DE TRÁFICO")
+        title.setPos(30, 70)
+        title.setDefaultTextColor(QColor(0, 0, 128))
+        title.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+
+        # Contar vehículos por origen-destino
+        routes_count = {}
+        for vehicle in self.vehicles:
+            route_key = f"{vehicle.lane} → {vehicle.destination}"
+            if route_key in routes_count:
+                routes_count[route_key] += 1
+            else:
+                routes_count[route_key] = 1
+
+        # Mostrar rutas más comunes
+        y_pos = 100
+        for route, count in sorted(routes_count.items(), key=lambda x: x[1], reverse=True)[:5]:
+            route_text = self.scene.addText(f"{route}: {count} vehículos")
+            route_text.setPos(30, y_pos)
+            y_pos += 20
+
+        # Mostrar total de vehículos
+        total = self.scene.addText(f"Total de vehículos: {len(self.vehicles)}")
+        total.setPos(30, y_pos + 10)
+        total.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+
+    # 7. Modificación a la clase Vehicle para mejorar la visualización de rutas
+    class VehicleWithImprovedDisplay(Vehicle):
+        def __init__(self, lane, position, destination=None):
+            super().__init__(lane, position, destination)
+            self.route_shown = False  # Para controlar si ya se mostró la ruta
+
+        def show_route_visualization(self, scene):
+            """
+            Muestra una visualización de la ruta que seguirá el vehículo
+            """
+            if self.route_shown:
+                return
+
+            # Colores para la ruta según el tipo de giro
+            if not self.turning:
+                route_color = QColor(30, 144, 255, 100)  # Azul transparente para recto
+            elif self.destination in ["Norte", "Sur"]:
+                route_color = QColor(255, 165, 0, 100)  # Naranja transparente para N/S
+            else:
+                route_color = QColor(0, 255, 0, 100)  # Verde transparente para E/O
+
+            # Mostrar una línea punteada que representa la ruta
+            route_pen = QPen(route_color, 3, Qt.PenStyle.DotLine)
+
+            # Calcular puntos de la ruta según origen-destino
+            if self.lane == "Norte" and self.destination == "Sur":
+                # Norte a Sur - línea recta vertical
+                route = scene.addLine(450, 0, 450, 700, route_pen)
+            elif self.lane == "Sur" and self.destination == "Norte":
+                # Sur a Norte - línea recta vertical
+                route = scene.addLine(430, 700, 430, 0, route_pen)
+            elif self.lane == "Este" and self.destination == "Oeste":
+                # Este a Oeste - línea recta horizontal
+                route = scene.addLine(0, 330, 900, 330, route_pen)
+            elif self.lane == "Oeste" and self.destination == "Este":
+                # Oeste a Este - línea recta horizontal
+                route = scene.addLine(900, 350, 0, 350, route_pen)
+            # Giros
+            elif self.lane == "Norte" and self.destination == "Este":
+                # Norte a Este - giro a la derecha
+                path = QPainterPath()
+                path.moveTo(450, 0)
+                path.lineTo(450, 330)
+                path.lineTo(900, 330)
+                scene.addPath(path, route_pen)
+            elif self.lane == "Sur" and self.destination == "Oeste":
+                # Sur a Oeste - giro a la derecha
+                path = QPainterPath()
+                path.moveTo(430, 700)
+                path.lineTo(430, 350)
+                path.lineTo(0, 350)
+                scene.addPath(path, route_pen)
+            elif self.lane == "Este" and self.destination == "Norte":
+                # Este a Norte - giro a la derecha
+                path = QPainterPath()
+                path.moveTo(0, 330)
+                path.lineTo(430, 330)
+                path.lineTo(430, 0)
+                scene.addPath(path, route_pen)
+            elif self.lane == "Oeste" and self.destination == "Sur":
+                # Oeste a Sur - giro a la derecha
+                path = QPainterPath()
+                path.moveTo(900, 350)
+                path.lineTo(450, 350)
+                path.lineTo(450, 700)
+                scene.addPath(path, route_pen)
+
+            self.route_shown = True  # Marcar que ya se mostró la ruta
+
     def dibujar_vehiculos(self):
+        """
+        Versión mejorada para visualizar mejor el origen y destino de cada vehículo
+        """
         # Dibujar todos los vehículos en la escena con colores según su destino
         for vehicle in self.vehicles:
             # Obtener posición según carril y posición relativa
@@ -885,7 +1300,7 @@ class SimuladorSemaforos(QMainWindow):
             # Obtener color según destino
             vehicle_color = vehicle.get_color_based_on_destination()
 
-            # Dibujar triángulo para representar el vehículo
+            # Dibujar vehículo con forma más clara (triángulo más visible)
             polygon = QPolygonF([
                 QPointF(0, -10),
                 QPointF(20, 0),
@@ -896,21 +1311,153 @@ class SimuladorSemaforos(QMainWindow):
             vehicle_item.setPos(x, y)
             vehicle_item.setRotation(rotation)
 
-            # Opcional: Indicar el destino del vehículo
-            if vehicle.turning:
-                # Añadir una pequeña etiqueta con el destino
-                dest_text = self.scene.addText(vehicle.destination[0])
-                dest_text.setPos(x + 15, y - 10)
-                dest_text.setDefaultTextColor(QColor(255, 255, 255))
+            # Añadir indicador de origen-destino más claro
+            # Crear un rectángulo con formato "Origen→Destino"
+            origin_dest_text = f"{vehicle.lane[0]}→{vehicle.destination[0]}"
+            text_bg = self.scene.addRect(
+                x - 10, y - 20, 40, 20,
+                QPen(Qt.GlobalColor.black),
+                QBrush(QColor(0, 0, 0, 180))  # Fondo negro semi-transparente
+            )
 
-                # Añadir un fondo para la etiqueta
-                text_bg = self.scene.addRect(
-                    x + 15, y - 10, 15, 15,
-                    QPen(Qt.PenStyle.NoPen),
-                    QBrush(QColor(0, 0, 0, 120))
-                )
-                # Asegurar que el texto esté encima del fondo
-                dest_text.setZValue(text_bg.zValue() + 1)
+            # Texto en blanco para mejor contraste
+            text_item = self.scene.addText(origin_dest_text)
+            text_item.setDefaultTextColor(QColor(255, 255, 255))  # Blanco
+            text_item.setPos(x - 5, y - 20)
+
+            # Asegurar que el texto esté encima del fondo
+            text_item.setZValue(text_bg.zValue() + 1)
+
+    def dibujar_carriles_con_flechas(self):
+        """
+        Mejora la visualización de los carriles con flechas de dirección
+        """
+        # Dibujar flechas de dirección en los carriles
+        # Norte - flecha hacia abajo
+        self.dibujar_flecha_direccion(450, 100, 270, "N")
+
+        # Sur - flecha hacia arriba
+        self.dibujar_flecha_direccion(450, 600, 90, "S")
+
+        # Este - flecha hacia la derecha
+        self.dibujar_flecha_direccion(200, 330, 0, "E")
+
+        # Oeste - flecha hacia la izquierda
+        self.dibujar_flecha_direccion(700, 350, 180, "O")
+
+    def dibujar_flecha_direccion(self, x, y, rotacion, direccion):
+        """
+        Dibuja una flecha indicadora de dirección en un carril
+        """
+        # Crear polígono para la flecha
+        flecha = QPolygonF([
+            QPointF(0, -15),   # Punta
+            QPointF(-10, 5),   # Esquina inferior izquierda
+            QPointF(-5, 5),    # Entrada izquierda
+            QPointF(-5, 15),   # Base izquierda
+            QPointF(5, 15),    # Base derecha
+            QPointF(5, 5),     # Entrada derecha
+            QPointF(10, 5)     # Esquina inferior derecha
+        ])
+
+        # Dibujar flecha con borde negro y relleno amarillo
+        flecha_item = self.scene.addPolygon(
+            flecha,
+            QPen(Qt.GlobalColor.black, 2),
+            QBrush(QColor(255, 255, 0, 200))  # Amarillo semi-transparente
+        )
+        flecha_item.setPos(x, y)
+        flecha_item.setRotation(rotacion)
+
+        # Añadir texto de dirección
+        texto = self.scene.addText(direccion)
+        texto.setDefaultTextColor(QColor(0, 0, 0))
+        texto.setPos(x - 5, y - 5)
+        texto.setZValue(flecha_item.zValue() + 1)
+
+    # 3. Función para dibujar una leyenda mejorada que explique los patrones de movimiento
+    def dibujar_leyenda_mejorada(self):
+        """
+        Dibuja una leyenda mejorada que explica los patrones de movimiento
+        """
+        # Fondo de la leyenda
+        legend_rect = self.scene.addRect(
+            650, 450, 230, 230,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(240, 240, 240, 220))  # Semi-transparente
+        )
+
+        # Título de la leyenda
+        legend_title = self.scene.addText("LEYENDA DE VEHÍCULOS")
+        legend_title.setPos(685, 460)
+        legend_title.setDefaultTextColor(QColor(0, 0, 0))
+
+        # Configurar un estilo de texto más visible
+        font = QFont("Arial", 10, QFont.Weight.Bold)
+
+        # Sección de colores
+        colors_title = self.scene.addText("Colores según destino:")
+        colors_title.setPos(660, 490)
+        colors_title.setFont(font)
+
+        # Azul - Recto
+        blue_rect = self.scene.addRect(
+            660, 520, 15, 15,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(30, 144, 255))
+        )
+        blue_text = self.scene.addText("Recto")
+        blue_text.setPos(685, 520)
+
+        # Naranja - Giro a Norte/Sur
+        orange_rect = self.scene.addRect(
+            660, 545, 15, 15,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(255, 165, 0))
+        )
+        orange_text = self.scene.addText("Giro a Norte/Sur")
+        orange_text.setPos(685, 545)
+
+        # Verde - Giro a Este/Oeste
+        green_rect = self.scene.addRect(
+            660, 570, 15, 15,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(0, 255, 0))
+        )
+        green_text = self.scene.addText("Giro a Este/Oeste")
+        green_text.setPos(685, 570)
+
+        # Sección de etiquetas en vehículos
+        labels_title = self.scene.addText("Etiquetas de vehículos:")
+        labels_title.setPos(660, 600)
+        labels_title.setFont(font)
+
+        # Ejemplo de etiqueta N→S
+        label_bg = self.scene.addRect(
+            660, 625, 30, 20,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(0, 0, 0, 180))
+        )
+        label_text = self.scene.addText("N→S")
+        label_text.setDefaultTextColor(QColor(255, 255, 255))
+        label_text.setPos(665, 625)
+
+        label_exp = self.scene.addText("= Norte a Sur")
+        label_exp.setPos(700, 625)
+
+        # Ejemplo de etiqueta E→O
+        label_bg2 = self.scene.addRect(
+            660, 650, 30, 20,
+            QPen(QColor(0, 0, 0)),
+            QBrush(QColor(0, 0, 0, 180))
+        )
+        label_text2 = self.scene.addText("E→O")
+        label_text2.setDefaultTextColor(QColor(255, 255, 255))
+        label_text2.setPos(665, 650)
+
+        label_exp2 = self.scene.addText("= Este a Oeste")
+        label_exp2.setPos(700, 650)
+
 
     def dibujar_semaforo_vehicular(self, direccion, x, y, rotacion):
         # Obtener el estado del semáforo
